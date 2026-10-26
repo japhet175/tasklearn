@@ -9,3 +9,6 @@ DerivedData/
 TaskLearn.xcodeproj/
 # CI output
 demo/
+
+# Personal notes, not published
+LEARNING.md
