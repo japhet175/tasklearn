@@ -1,0 +1,49 @@
+name: tests
+on: [push, pull_request, workflow_dispatch]
+jobs:
+  core-tests:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Swift version
+        run: swift --version
+      - name: Test TaskCore
+        working-directory: TaskCore
+        run: swift test
+
+  app-ui-tests:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen
+      - name: Boot an iPhone simulator
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          devices = json.load(sys.stdin)["devices"]
+          iphones = [d for runtime, ds in devices.items() if "iOS" in runtime for d in ds if d["name"].startswith("iPhone")]
+          print(iphones[-1]["udid"])')
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID"
+      - name: Build, run UI tests and record video
+        run: |
+          mkdir -p demo
+          xcrun simctl io "$UDID" recordVideo --codec h264 --force demo/demo.mp4 &
+          REC=$!
+          set +e
+          TEST_RUNNER_SCREENSHOTS_DIR="$PWD/demo" xcodebuild test \
+            -project TaskLearn.xcodeproj -scheme TaskLearn \
+            -destination "id=$UDID" -resultBundlePath demo/TestResults.xcresult
+          STATUS=$?
+          kill -INT $REC; wait $REC
+          exit $STATUS
+      - name: Upload screenshots and video
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-demo
+          path: demo
